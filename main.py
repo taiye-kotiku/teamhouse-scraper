@@ -4,7 +4,6 @@ import logging
 from fastapi import FastAPI
 from pydantic import BaseModel
 from playwright.async_api import async_playwright
-from playwright_stealth import stealth_async  # ← Add this
 import uvicorn
 
 logging.basicConfig(level=logging.INFO, stream=sys.stdout, force=True)
@@ -24,12 +23,11 @@ async def root():
 
 @app.get("/health")
 async def health():
-    return {"status": "ok"}
+    return {"status": "ok", "service": "teamhouse-scraper"}
 
 @app.post("/scrape")
 async def scrape_page(request: ScrapeRequest):
     logger.info(f"Scraping: {request.url}")
-    
     try:
         async with async_playwright() as p:
             browser = await p.chromium.launch(
@@ -37,61 +35,49 @@ async def scrape_page(request: ScrapeRequest):
                 args=[
                     "--no-sandbox",
                     "--disable-setuid-sandbox",
-                    "--disable-blink-features=AutomationControlled",  # ← Hide automation
+                    "--disable-dev-shm-usage",
+                    "--disable-blink-features=AutomationControlled",
+                    "--no-first-run",
+                    "--no-zygote",
+                    "--disable-gpu"
                 ]
             )
-            
+
             context = await browser.new_context(
                 user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-                viewport={"width": 1920, "height": 1080},
+                viewport={"width": 1280, "height": 800},
                 locale="it-IT",
-                timezone_id="Europe/Rome",
-                geolocation={"longitude": 9.1859, "latitude": 45.4642},  # Milan coordinates
-                permissions=["geolocation"],
                 extra_http_headers={
-                    "Accept-Language": "it-IT,it;q=0.9,en-US;q=0.8,en;q=0.7",
-                    "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8",
-                    "Accept-Encoding": "gzip, deflate, br",
-                    "DNT": "1",
-                    "Connection": "keep-alive",
-                    "Upgrade-Insecure-Requests": "1"
+                    "Accept-Language": "it-IT,it;q=0.9,en;q=0.8",
+                    "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8"
                 }
             )
-            
+
             page = await context.new_page()
-            
-            # ✅ Apply stealth mode
-            await stealth_async(page)
-            
-            # Add realistic delays
-            await page.goto(request.url, wait_until="domcontentloaded", timeout=30000)
-            await page.wait_for_timeout(2000)  # Human-like pause
-            
-            # Scroll to simulate human behavior
-            await page.evaluate("window.scrollTo(0, document.body.scrollHeight / 2)")
-            await page.wait_for_timeout(1000)
-            
+
+            await page.route(
+                "**/*.{png,jpg,jpeg,gif,svg,ico,woff,woff2,ttf,mp4,mp3}",
+                lambda route: route.abort()
+            )
+
+            await page.goto(request.url, wait_until="networkidle", timeout=30000)
             await page.wait_for_timeout(request.wait_seconds * 1000)
-            
+
             html = await page.content()
             await browser.close()
-            
-            # Check if CAPTCHA'd
-            if "captcha-delivery.com" in html or "DataDome" in html:
-                logger.warning("CAPTCHA detected!")
-                return {
-                    "success": False,
-                    "url": request.url,
-                    "error": "CAPTCHA_BLOCKED",
-                    "html": html[:500]  # Return snippet for debugging
-                }
-            
-            logger.info(f"Scrape successful. HTML length: {len(html)}")
+
+            blocked = (
+                "captcha-delivery.com" in html
+                or "DataDome" in html
+                or "geo.captcha-delivery.com" in html
+            )
+
             return {
-                "success": True,
+                "success": not blocked,
                 "url": request.url,
                 "html": html,
-                "length": len(html)
+                "length": len(html),
+                "blocked": blocked
             }
 
     except Exception as e:
@@ -100,10 +86,11 @@ async def scrape_page(request: ScrapeRequest):
             "success": False,
             "url": request.url,
             "error": str(e),
-            "html": ""
+            "html": "",
+            "blocked": False
         }
 
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 8000))
-    logger.info(f"🚀 Starting uvicorn on 0.0.0.0:{port}")
-    uvicorn.run(app, host="0.0.0.0", port=port, log_level="info", proxy_headers=True, forwarded_allow_ips="*")
+    logger.info(f"Starting uvicorn on 0.0.0.0:{port}")
+    uvicorn.run(app, host="0.0.0.0", port=port, log_level="info")
