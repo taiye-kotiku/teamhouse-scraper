@@ -2,7 +2,7 @@ FROM mcr.microsoft.com/playwright/python:v1.47.0-jammy
 
 WORKDIR /app
 
-# Install Python dependencies
+# Install dependencies
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
@@ -10,11 +10,14 @@ RUN pip install --no-cache-dir -r requirements.txt
 RUN playwright install chromium
 RUN playwright install-deps chromium
 
-# Copy application code
+# Copy app
 COPY . .
 
-# Railway will inject PORT env var
+# Verify Playwright installation
+RUN python -c "from playwright.sync_api import sync_playwright; print('Playwright OK')"
+
+# Expose port
 EXPOSE 8000
 
-# Start with Python (reads PORT from env)
-CMD ["python", "main.py"]
+# Run with unbuffered output
+CMD ["python", "-u", "main.py"]
