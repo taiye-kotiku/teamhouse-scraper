@@ -2,7 +2,7 @@ FROM mcr.microsoft.com/playwright/python:v1.47.0-jammy
 
 WORKDIR /app
 
-# Install Python dependencies
+# Install dependencies
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
@@ -10,15 +10,13 @@ RUN pip install --no-cache-dir -r requirements.txt
 RUN playwright install chromium
 RUN playwright install-deps chromium
 
-# Copy application
+# Copy app
 COPY . .
 
-# Health check for Railway
-HEALTHCHECK --interval=30s --timeout=10s --start-period=40s --retries=3 \
-  CMD python -c "import urllib.request; urllib.request.urlopen('http://localhost:' + __import__('os').environ.get('PORT', '8000') + '/health')" || exit 1
+# Render assigns PORT automatically
+ENV PORT=10000
 
-# Expose default port (Railway overrides with PORT env var)
-EXPOSE 8000
+EXPOSE 10000
 
-# Run with unbuffered output
+# Start app
 CMD ["python", "-u", "main.py"]
