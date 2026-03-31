@@ -2,21 +2,22 @@ FROM mcr.microsoft.com/playwright/python:v1.47.0-jammy
 
 WORKDIR /app
 
-# Install dependencies
+# Install Python dependencies
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Install Playwright browsers
+# Install Playwright
 RUN playwright install chromium
 RUN playwright install-deps chromium
 
-# Copy app
+# Copy application
 COPY . .
 
-# Verify Playwright installation
-RUN python -c "from playwright.sync_api import sync_playwright; print('Playwright OK')"
+# Health check for Railway
+HEALTHCHECK --interval=30s --timeout=10s --start-period=40s --retries=3 \
+  CMD python -c "import urllib.request; urllib.request.urlopen('http://localhost:' + __import__('os').environ.get('PORT', '8000') + '/health')" || exit 1
 
-# Expose port
+# Expose default port (Railway overrides with PORT env var)
 EXPOSE 8000
 
 # Run with unbuffered output

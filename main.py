@@ -6,15 +6,21 @@ from pydantic import BaseModel
 from playwright.async_api import async_playwright
 import uvicorn
 
-# Configure logging
+# Configure logging FIRST
 logging.basicConfig(
     level=logging.INFO,
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
-    stream=sys.stdout
+    stream=sys.stdout,
+    force=True
 )
 logger = logging.getLogger(__name__)
 
-# ✅ Set Playwright browser path
+# ✅ Log PORT immediately at module level
+RAILWAY_PORT = os.environ.get("PORT")
+logger.info(f"🔍 RAILWAY PORT ENV VAR: {RAILWAY_PORT}")
+logger.info(f"🔍 ALL ENV VARS: {list(os.environ.keys())}")
+
+# Set Playwright browser path
 os.environ["PLAYWRIGHT_BROWSERS_PATH"] = "/ms-playwright"
 
 app = FastAPI(title="TeamHouse Scraper Service", version="0.1.0")
@@ -23,27 +29,18 @@ class ScrapeRequest(BaseModel):
     url: str
     wait_seconds: int = 3
 
-@app.on_event("startup")
-async def startup_event():
-    logger.info("🚀 TeamHouse Scraper starting...")
-    logger.info(f"PORT: {os.environ.get('PORT', 'not set')}")
-    logger.info(f"Playwright browsers path: {os.environ.get('PLAYWRIGHT_BROWSERS_PATH')}")
-
 @app.get("/")
 async def root():
-    return {"message": "TeamHouse Scraper API", "status": "running"}
+    logger.info("Root endpoint hit")
+    return {"message": "TeamHouse Scraper API", "status": "running", "port": RAILWAY_PORT}
 
 @app.get("/health")
 async def health():
     logger.info("Health check received")
-    return {"status": "ok", "service": "teamhouse-scraper"}
+    return {"status": "ok", "service": "teamhouse-scraper", "port": RAILWAY_PORT}
 
 @app.post("/scrape")
 async def scrape_page(request: ScrapeRequest):
-    """
-    Scrape a URL using Playwright (handles JS-rendered pages).
-    Returns raw HTML of the fully rendered page.
-    """
     logger.info(f"Scraping: {request.url}")
     
     try:
@@ -62,19 +59,13 @@ async def scrape_page(request: ScrapeRequest):
                 ]
             )
             
-            logger.info("Creating browser context...")
             context = await browser.new_context(
-                user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+                user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
                 viewport={"width": 1280, "height": 800},
-                locale="it-IT",
-                extra_http_headers={
-                    "Accept-Language": "it-IT,it;q=0.9,en;q=0.8",
-                    "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8"
-                }
+                locale="it-IT"
             )
             page = await context.new_page()
 
-            # Block images, fonts, media to speed up
             await page.route(
                 "**/*.{png,jpg,jpeg,gif,svg,ico,woff,woff2,ttf,mp4,mp3}",
                 lambda route: route.abort()
@@ -107,12 +98,16 @@ async def scrape_page(request: ScrapeRequest):
 
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 8000))
-    logger.info(f"Starting uvicorn on 0.0.0.0:{port}")
+    logger.info(f"🚀 Starting uvicorn on 0.0.0.0:{port}")
     
-    uvicorn.run(
-        "main:app", 
-        host="0.0.0.0", 
-        port=port,
-        reload=False,
-        log_level="info"
-    )
+    try:
+        uvicorn.run(
+            app,  # ✅ Changed from "main:app" to app directly
+            host="0.0.0.0", 
+            port=port,
+            log_level="info",
+            access_log=True
+        )
+    except Exception as e:
+        logger.error(f"Failed to start uvicorn: {e}", exc_info=True)
+        sys.exit(1)
