@@ -1,3 +1,4 @@
+import os
 from fastapi import FastAPI
 from pydantic import BaseModel
 from playwright.async_api import async_playwright
@@ -72,4 +73,12 @@ async def scrape_page(request: ScrapeRequest):
         }
 
 if __name__ == "__main__":
-    uvicorn.run("main:app", host="0.0.0.0", port=8000, reload=False)
+    # ✅ FIX: Read PORT from Railway environment variable
+    port = int(os.environ.get("PORT", 8000))
+    uvicorn.run(
+        "main:app", 
+        host="0.0.0.0", 
+        port=port,  # ← Changed from hardcoded 8000
+        reload=False,
+        log_level="info"
+    )
